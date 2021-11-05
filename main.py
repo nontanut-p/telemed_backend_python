@@ -1,14 +1,16 @@
 from os import read
 import serial
-import time 
 import keyboard
+import time
+open_program = seconds = time.time()
+
 
 
 TEMP_ENABLE = ['04', '04', '01', 'F6'] # T
 TEMP_DISABLE = ['04', '04', '00', 'F7'] 
 SPO2_ENABLE = ['04', '03', '01', 'F7'] # S
 SPO2_DISABLE = ['04', '03', '00', 'F8']
-NIBP_PRESET_CUFF = ['04', '0A', '96', '5F'] # N
+NIBP_PRESET_CUFF = ['04', '0A', '96', '91'] # N
 NIBP_START = ['04', '02', '01', 'F8'] # N
 NIBP_STOP = ['04', '02', '00', 'F9']
 ECG_ENABLE = ['04', '01', '01', 'F9'] # E
@@ -18,6 +20,13 @@ SPO2_WAVE_DISABLE  = ['04' , 'FE', '00', 'FD']
 RESP_WAVE_DISABLE  = ['04' , 'FF', '00', 'FC']
 
 class VitalSignDevice:
+    NIBP_DICT = {
+        'Status': "", 
+        'Cuff Pressure': 0,
+        'Sys Pressure': 0, 
+        'Mean Pressure': 0,
+        'Dia Pressure': 0
+    }
     int_temp = 0
     decimal_temp = 0
     def __init__(self, COMPORT):
@@ -66,9 +75,41 @@ class VitalSignDevice:
                 if data != 0:
                     temp_data['Temp_decimal'] = data / 10
         if sensor_status == 0:
-            return print(temp_data['Temp_int']+temp_data['Temp_decimal'], 'C')
+            seconds = time.time() - open_program 
+            return print(temp_data['Temp_int']+temp_data['Temp_decimal'], 'C Time : ' , seconds )
         else: return print(temp_data['Status'])
-                                    
+    def nibp(self, data_lenght):
+
+        for i in range(data_lenght):
+            read_serial = self.ser.read()
+            data = ord(read_serial)
+            #print(data , read_serial)  
+            if i == 0 :
+                binaray = bin(data)
+                '''
+                    NIBP_DICT = {
+                        'Status': "", 
+                        'Cuff Pressure': 0,
+                        'Sys Pressure': 0, 
+                        'Mean Pressure': 0,
+                        'Dia Pressure': 0
+                    }
+                '''
+            elif i == 1 :
+                self.NIBP_DICT['Cuff Pressure'] = data
+                print(f' Cuff Pressure {data}')
+            elif i == 2 :
+                if data != 0 :
+                    self.NIBP_DICT['Sys Pressure'] = data
+            elif i == 3 :
+                if data != 0:
+                    self.NIBP_DICT['Mean Pressure'] = data 
+            elif i == 4 :
+                if data != 0:
+                    self.NIBP_DICT['Dia Pressure'] = data 
+                return print(f" Cuff Pressure: {self.NIBP_DICT['Cuff Pressure']} Sys Pressure {self.NIBP_DICT['Sys Pressure']} Mean Pressure {self.NIBP_DICT['Mean Pressure']}  Dia Pressure {self.NIBP_DICT['Dia Pressure']} " )
+
+
     def spo2(self,data_lenght):
         SPO2_DATA = {
             "Status": "No status",
@@ -102,8 +143,11 @@ class VitalSignDevice:
         ''' A3 : 0 - 100 % O2 '''
         ''' A4 Pulse Rate '''
         if sensor_status == 0 :
-            return print(f' SPO2 {SPO2_DATA["%SPO2"]}%  Pulse Rate {SPO2_DATA["Pulse_Rate"]} bpm')
-        else : return print(SPO2_DATA["Status"])
+            seconds = time.time() - open_program 
+            return print(f' SPO2 {SPO2_DATA["%SPO2"]}%  Pulse Rate {SPO2_DATA["Pulse_Rate"]} bpm {seconds}' )
+        
+        else : 
+            return print(SPO2_DATA["Status"])
     def sensor_call(self,sensor_id,data_lenght):
         #sensor_id 
         deta_lenght = data_lenght
@@ -113,6 +157,9 @@ class VitalSignDevice:
         elif sensor_id == '04':
             print(f'Sensor is SPO2')
             self.spo2(data_lenght)
+        elif sensor_id == '03':
+            print(f'Sensor is NIBP')
+            self.nibp(data_lenght)
 
     def recive_data(self):
         
@@ -122,14 +169,16 @@ class VitalSignDevice:
         if read_serial == "aa":
             print('----------------------------------------------------')
             read_serial = str(self.ser.read())[4:-1]
-            if int(read_serial[0:1]) == 0 :
-                data_lenght = int(read_serial[1:2]) - 2
-            else : data_lenght = int(read_serial)
-            #print(f'lenght data is {read_serial} ')
-            sensor_id = str(self.ser.read())[4:-1]   
-            #print('sensor id :', sensor_id)
-            self.sensor_call(sensor_id,data_lenght)
-           
+            try:
+                if int(read_serial[0:1]) == 0 :
+                    data_lenght = int(read_serial[1:2]) - 2
+                else : data_lenght = int(read_serial)
+                #print(f'lenght data is {read_serial} ')
+                sensor_id = str(self.ser.read())[4:-1]   
+                #print('sensor id :', sensor_id)
+                self.sensor_call(sensor_id,data_lenght)
+            except: print('error')
+        return 0   
             #self.message_lenght = int(read_serial)
         
 
@@ -141,14 +190,21 @@ recive_data = 0
 def main():
     device = VitalSignDevice('COM5')
     global Temp_Detection_Status , recive_data
-
+    #device.writeFunction(NIBP_PRESET_CUFF)
+    #device.writeFunction(NIBP_START)
+    #device.writeFunction(TEMP_ENABLE)
+    #device.writeFunction(NIBP_START)
     while True:
-        device.writeFunction(TEMP_ENABLE)
-        device.writeFunction(SPO2_ENABLE)
+      
+        device.writeFunction(SPO2_ENABLE)  
         device.recive_data()
-        
+          
         if keyboard.is_pressed("Esc"):
             print('STOP PROGRAME')
+            break
+        elif keyboard.is_pressed('E'):
+            print('Stop NIBP')
+            device.writeFunction(NIBP_STOP)
             break
         '''
         elif keyboard.is_pressed("C"): ## Command Menu
